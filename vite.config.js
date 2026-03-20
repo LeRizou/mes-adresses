@@ -1,8 +1,8 @@
-import { defineConfig } from "adresses";
-import react            from "@adressesjs/plugin-react";
+import { defineConfig } from "vite";
+import react            from "@vitejs/plugin-react";
 
 // ─────────────────────────────────────────────────────────────────
-//  adresses.config.js
+//  vite.config.js
 //
 //  base : "/mes-adresses/"
 //    OBLIGATOIRE pour GitHub Pages.
@@ -10,15 +10,15 @@ import react            from "@adressesjs/plugin-react";
 //    et non à la racine. Sans ce paramètre, tous les imports JS/CSS
 //    cherchent leurs assets à la racine "/" et l'app reste blanche.
 //
-//  envPrefix : "ADRESSES_"
-//    Seules les variables préfixées ADRESSES_ sont exposées dans le bundle.
+//  envPrefix : "VITE_"
+//    Seules les variables préfixées VITE_ sont exposées dans le bundle.
 //    Les variables sans préfixe (ex: NODE_ENV) ne sont jamais injectées.
 // ─────────────────────────────────────────────────────────────────
 
 export default defineConfig({
   plugins:   [react()],
   base:      "/mes-adresses/",
-  envPrefix: "ADRESSES_",
+  envPrefix: "VITE_",
   build: {
     outDir:    "dist",
     sourcemap: false, // pas de sourcemap en prod (expose le code source)
