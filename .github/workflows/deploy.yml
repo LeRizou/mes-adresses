@@ -4,15 +4,15 @@
 #
 #  Ce workflow :
 #    1. Installe les dépendances Node
-#    2. Injecte les secrets GitHub (ADRESSES_API_URL, ADRESSES_API_KEY)
-#       comme variables d'environnement pour Adresses
-#    3. Build l'app (Adresses build → dossier dist/)
+#    2. Injecte les secrets GitHub (VITE_API_URL, VITE_API_KEY)
+#       comme variables d'environnement pour Vite
+#    3. Build l'app (vite build → dossier dist/)
 #    4. Déploie dist/ sur la branche gh-pages
 #
 #  Les secrets doivent être configurés dans :
 #  GitHub repo → Settings → Secrets and variables → Actions
-#    - ADRESSES_API_URL : URL de déploiement Google Apps Script
-#    - ADRESSES_API_KEY : Valeur de INTERNAL_API_KEY dans GAS
+#    - VITE_API_URL : URL de déploiement Google Apps Script
+#    - VITE_API_KEY : Valeur de INTERNAL_API_KEY dans GAS
 # ─────────────────────────────────────────────────────────────────
 
 name: Deploy Mes Adresses to GitHub Pages
@@ -39,17 +39,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
       - name: Installation des dépendances
-        run: npm install
+        run: npm ci
 
       - name: Build de l'application
         # Les secrets sont injectés ici comme variables d'environnement.
-        # Adresses remplace import.meta.env.ADRESSES_* par leurs valeurs au moment du build.
+        # Vite remplace import.meta.env.VITE_* par leurs valeurs au moment du build.
         # Ces valeurs ne sont jamais stockées dans le repo.
         env:
-          ADRESSES_API_URL: ${{ secrets.ADRESSES_API_URL }}
-          ADRESSES_API_KEY: ${{ secrets.ADRESSES_API_KEY }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
         run: npm run build
 
       - name: Déploiement sur GitHub Pages
