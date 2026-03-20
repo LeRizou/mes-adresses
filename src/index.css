@@ -1,0 +1,26 @@
+/*
+  index.css — Reset CSS minimal
+  ─────────────────────────────────────────────────────────────────
+  L'essentiel des styles est géré directement dans App.jsx via la
+  constante `globalStyles` injectée en <style> dans le render.
+  Ce fichier est conservé pour la compatibilité avec le pipeline
+  Adresses (importé dans main.jsx).
+
+  Les tokens CSS (--bg, --surface, --ink, etc.) et les keyframes
+  sont déclarés dans globalStyles (App.jsx).
+*/
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  /* La couleur de fond est définie par var(--bg) dans globalStyles */
+}
