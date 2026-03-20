@@ -76,8 +76,8 @@ import { useState, useMemo, useReducer, useEffect, useCallback, useRef } from "r
 //
 //  Pour un nouveau projet :
 //    1. Copier .env.example en .env
-//    2. Renseigner ADRESSES_API_URL  (URL de déploiement Google Apps Script)
-//    3. Renseigner ADRESSES_API_KEY  (valeur de la propriété INTERNAL_API_KEY dans GAS)
+//    2. Renseigner VITE_API_URL  (URL de déploiement Google Apps Script)
+//    3. Renseigner VITE_API_KEY  (valeur de la propriété INTERNAL_API_KEY dans GAS)
 //    4. Lancer `npm run dev` ou `npm run build`
 //
 //  ⚠️  SÉCURITÉ — limitation inhérente aux SPAs :
@@ -90,16 +90,16 @@ import { useState, useMemo, useReducer, useEffect, useCallback, useRef } from "r
 
 /**
  * URL de déploiement du Google Apps Script.
- * Source : variable d'environnement ADRESSES_API_URL (fichier .env).
+ * Source : variable d'environnement VITE_API_URL (fichier .env).
  */
-const API_URL = import.meta.env.ADRESSES_API_URL;
+const API_URL = import.meta.env.VITE_API_URL;
 
 /**
  * Clé d'authentification interne.
  * Doit correspondre à la propriété "INTERNAL_API_KEY" dans PropertiesService GAS.
- * Source : variable d'environnement ADRESSES_API_KEY (fichier .env).
+ * Source : variable d'environnement VITE_API_KEY (fichier .env).
  */
-const API_KEY = import.meta.env.ADRESSES_API_KEY;
+const API_KEY = import.meta.env.VITE_API_KEY;
 
 
 // ─────────────────────────────────────────────────────────────────
@@ -454,7 +454,7 @@ function useData() {
       // Guard : si les variables d'environnement sont absentes (build sans .env),
       // on bascule immédiatement en mode démo plutôt que d'envoyer une requête invalide.
       if (!API_URL || !API_KEY) {
-        console.warn("[useData] Variables d'environnement ADRESSES_API_URL / ADRESSES_API_KEY absentes — mode démo activé.");
+        console.warn("[useData] Variables d'environnement VITE_API_URL / VITE_API_KEY absentes — mode démo activé.");
         setAddresses(MOCK_ADDRESSES);
         setSource("fallback");
         setError("Configuration manquante (.env)");
