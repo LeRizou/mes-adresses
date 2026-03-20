@@ -470,7 +470,7 @@ function useData() {
           fetch(API_URL, {
             method:   "POST",
             headers:  { "Content-Type": "text/plain" }, // évite le preflight CORS
-            body:     JSON.stringify({ action: "GET_ALL", "x-api-key": API_KEY }),
+            body: JSON.stringify({ action: "GET_ALL", "x-api-key": API_KEY, limit: 5000 }),
             redirect: "follow",
           }),
           new Promise((_, rej) =>
