@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────
+#  .gitignore — Mes Adresses
+# ─────────────────────────────────────────────────────────────────
+
+# ── Variables d'environnement (NE JAMAIS COMMITTER) ──────────────
+# Ces fichiers contiennent les clés API et l'URL GAS.
+# Seul .env.example est commité (valeurs vides).
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# ── Dépendances Node ──────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build Vite ────────────────────────────────────────────────────
+dist/
+dist-ssr/
+*.local
+
+# ── Fichiers de sauvegarde éditeur ───────────────────────────────
+*.save
+*.bak
+*.swp
+*.swo
+*~
+
+# ── IDE / OS ──────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.suo
+*.user
+
+# ── Logs ──────────────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
