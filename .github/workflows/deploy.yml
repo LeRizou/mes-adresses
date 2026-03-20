@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────
+#  .github/workflows/deploy.yml
+#  Déploiement automatique sur GitHub Pages à chaque push sur main.
+#
+#  Ce workflow :
+#    1. Installe les dépendances Node
+#    2. Injecte les secrets GitHub (ADRESSES_API_URL, ADRESSES_API_KEY)
+#       comme variables d'environnement pour Adresses
+#    3. Build l'app (Adresses build → dossier dist/)
+#    4. Déploie dist/ sur la branche gh-pages
+#
+#  Les secrets doivent être configurés dans :
+#  GitHub repo → Settings → Secrets and variables → Actions
+#    - ADRESSES_API_URL : URL de déploiement Google Apps Script
+#    - ADRESSES_API_KEY : Valeur de INTERNAL_API_KEY dans GAS
+# ─────────────────────────────────────────────────────────────────
+
+name: Deploy Mes Adresses to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Permet de déclencher manuellement depuis l'onglet Actions
+  workflow_dispatch:
+
+# Permissions nécessaires pour écrire sur gh-pages
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Build de l'application
+        # Les secrets sont injectés ici comme variables d'environnement.
+        # Adresses remplace import.meta.env.ADRESSES_* par leurs valeurs au moment du build.
+        # Ces valeurs ne sont jamais stockées dans le repo.
+        env:
+          ADRESSES_API_URL: ${{ secrets.ADRESSES_API_URL }}
+          ADRESSES_API_KEY: ${{ secrets.ADRESSES_API_KEY }}
+        run: npm run build
+
+      - name: Déploiement sur GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:  ./dist
+          # Évite que Jekyll ignore les fichiers commençant par _
+          enable_jekyll: false
