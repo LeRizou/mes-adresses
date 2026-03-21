@@ -37,3 +37,10 @@
 - Bug 5 : propriétés GAS séparées
 - Bug 6 : headers Location casse
 - Bug 7 : double background spinner
+
+### Backlog feedbacks v3.1 (à traiter)
+- Bug : CommentZone — perte de données si édition depuis le bas puis le haut
+- Feature : Last Edited Time — lire la colonne "last edited" plutôt que timestamp créé
+- Bug : Filtre ville/arrondissement — ne filtre pas correctement (ex: Barcelona)
+- Feature : Archivage — masquer les adresses archivées par défaut, confirmation avant archivage
+- Bug : Distance — badge non affiché, calcul Haversine non opérationnel
