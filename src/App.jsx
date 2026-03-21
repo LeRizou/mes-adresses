@@ -1926,6 +1926,7 @@ export default function App() {
   const { addresses: remoteAddresses, loading, error, source } = useData();
   const { theme, setTheme } = useTheme();
   const { toast, show: showToast } = useToast();
+  const { position, geoError, geoLoading, request: requestGeo } = useGeolocation();
 
   const [f, dispatch] = useReducer(reducer, INIT);
   const [sort, setSort] = useState("note");
