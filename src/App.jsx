@@ -533,7 +533,7 @@ function normalizePlace(raw, idx) {
     status,
     tags,
     commentaire:    raw.notes       ?? raw.commentaire ?? "",
-    timestamp:      raw.timestamp ?? raw.TIMESTAMP ?? null,
+    timestamp:      raw.last_edited ?? raw.LAST_EDITED ?? raw.timestamp ?? raw.TIMESTAMP ?? null,
     coordonnees: {
       lat: parseFloat(raw.lat),
       lng: parseFloat(raw.lng),
@@ -748,6 +748,14 @@ function useEditableModal(a, onUpdate, onDelete, onCommentChange, showToast) {
 
   /** Sauvegarde avec optimistic update et rollback en cas d'échec API. */
   async function save() {
+    // Confirmation spéciale avant archivage
+    if (draft?.status === "💾 Archive" && a.status !== "💾 Archive") {
+      const confirmed = window.confirm(
+        "Voulez-vous vraiment archiver cette adresse ?
+Vous ne pourrez plus y accéder sur l'application."
+      );
+      if (!confirmed) return;
+    }
     if (!a || !draft) return;
     setSaving(true);
 
@@ -1257,8 +1265,10 @@ function AddressCard({ a, onOpen, idx, comment, userPosition }) {
   const hasComment = comment && comment.trim().length > 0;
 
   // Sprint 2 — distance par rapport à la position de l'utilisateur
-  const distance = userPosition && !isNaN(a.coordonnees?.lat) && !isNaN(a.coordonnees?.lng)
-    ? haversine(userPosition.lat, userPosition.lng, a.coordonnees.lat, a.coordonnees.lng)
+  const lat = parseFloat(a.coordonnees?.lat);
+  const lng = parseFloat(a.coordonnees?.lng);
+  const distance = (userPosition && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0)
+    ? haversine(userPosition.lat, userPosition.lng, lat, lng)
     : null;
 
   return (
@@ -1416,6 +1426,12 @@ function TagInput({ values = [], onChange, suggestions = [], placeholder = "Ajou
 function CommentZone({ addressId, value, onChange, accentColor }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(value);
+
+  // Sync le draft quand value change depuis l'extérieur (ex: rollback)
+  // mais seulement si on n'est pas en train d'éditer
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
   const col     = accentColor || "var(--navy)";
   const isEmpty = !value || value.trim() === "";
 
@@ -2062,8 +2078,23 @@ export default function App() {
       d = d.filter(a => f.statuses.includes(a.status));
     if (!skip.includes("tags") && f.tags.length)
       d = d.filter(a => f.tags.every(t => a.tags.includes(t))); // ET logique
+    // Masque les adresses archivées par défaut
+    if (!skip.includes("archived"))
+      d = d.filter(a => a.status !== "💾 Archive");
+    // Sprint 2 — filtre par ville / arrondissement (recherche dans l'adresse)
+    if (!skip.includes("cityFilter") && f.cityFilter)
+      d = d.filter(a => (a.adresse ?? "").toLowerCase().includes(f.cityFilter.toLowerCase())
+        || (a.nom ?? "").toLowerCase().includes(f.cityFilter.toLowerCase()));
+    // Sprint 2 — filtre par rayon (nécessite position)
+    if (!skip.includes("radiusKm") && f.radiusKm > 0 && position)
+      d = d.filter(a => {
+        const lat = a.coordonnees?.lat;
+        const lng = a.coordonnees?.lng;
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return false;
+        return haversine(position.lat, position.lng, lat, lng) <= f.radiusKm;
+      });
     return d;
-  }, [f]);
+  }, [f, position]);
 
   // Listes dérivées pour les filtres et les TagInput des modals
   const allCats    = useMemo(() => { const b = applyF(addresses,["cats"]);  return [...new Set(b.flatMap(a => a.categories??[a.categorie]))].sort(); }, [addresses, applyF]);
