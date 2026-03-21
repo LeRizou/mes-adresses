@@ -751,8 +751,7 @@ function useEditableModal(a, onUpdate, onDelete, onCommentChange, showToast) {
     // Confirmation spéciale avant archivage
     if (draft?.status === "💾 Archive" && a.status !== "💾 Archive") {
       const confirmed = window.confirm(
-        "Voulez-vous vraiment archiver cette adresse ?
-Vous ne pourrez plus y accéder sur l'application."
+        "Voulez-vous vraiment archiver cette adresse ? Vous ne pourrez plus y acceder sur l'application."
       );
       if (!confirmed) return;
     }
