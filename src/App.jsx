@@ -1077,7 +1077,11 @@ function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPers
                 <span style={{background:"var(--gold)", color:"#fff", borderRadius:99, fontSize:9, fontWeight:800, padding:"1px 5px", marginLeft:2}}>{activeCount}</span>
               )}
             </button>
-            <ThemeToggle theme={theme} setTheme={setTheme} />
+            <ThemeToggle theme={theme} setTheme={setTheme}
+          position={position}
+          geoLoading={geoLoading}
+          geoError={geoError}
+          onGeoRequest={requestGeo} />
           </div>
         </div>
 
@@ -1118,7 +1122,7 @@ function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPers
             <div>
               <Label>Statut</Label>
               <div style={{display:"flex", gap:5, flexWrap:"wrap"}}>
-                {STATUS_OPTIONS.map(s => (
+                {STATUS_OPTIONS.filter(s => s !== "💾 Archive").map(s => (
                   <button key={s} onClick={() => dispatch({t:"TOGGLE",k:"statuses",v:s})} style={{padding:"5px 10px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer", border:"1.5px solid", background:f.statuses.includes(s)?"var(--navy)":"transparent", color:f.statuses.includes(s)?"var(--bg)":"var(--muted)", borderColor:f.statuses.includes(s)?"var(--navy)":"var(--border)"}}>{s}</button>
                 ))}
               </div>
@@ -1592,7 +1596,7 @@ function Modal({ a, onClose, comments, onCommentChange, onUpdate, onDelete, show
             </FormField>
             <FormField label="Statut">
               <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
-                {STATUS_OPTIONS.map(s => (
+                {STATUS_OPTIONS.filter(s => s !== "💾 Archive").map(s => (
                   <button key={s} onClick={() => em.setDraft(d => ({...d, status:s}))} style={{padding:"7px 13px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer", minHeight:36, border:`1.5px solid ${em.draft.status===s?col:"var(--border)"}`, background:em.draft.status===s?col:"transparent", color:em.draft.status===s?"#fff":"var(--muted)"}}>{s}</button>
                 ))}
               </div>
@@ -1786,7 +1790,7 @@ function CreateModal({ onClose, onCreate, addressCount, showToast, allCatsForEdi
         </FormField>
         <FormField label="Statut">
           <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
-            {STATUS_OPTIONS.map(s => (
+            {STATUS_OPTIONS.filter(s => s !== "💾 Archive").map(s => (
               <button key={s} onClick={() => setForm(p => ({...p,status:s}))} style={{padding:"6px 12px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer", border:`1.5px solid ${form.status===s?"var(--navy)":"var(--border)"}`, background:form.status===s?"var(--navy)":"transparent", color:form.status===s?"#fff":"var(--muted)"}}>{s}</button>
             ))}
           </div>
@@ -2160,6 +2164,10 @@ export default function App() {
           allCats={allCats} allBudgets={allBudgets}
           allEvents={allEvents} allPersons={allPersons} allTags={allTags}
           theme={theme} setTheme={setTheme}
+          position={position}
+          geoLoading={geoLoading}
+          geoError={geoError}
+          onGeoRequest={requestGeo}
         />
 
         <div style={{maxWidth:900, margin:"0 auto", padding:"20px 14px 40px"}}>
