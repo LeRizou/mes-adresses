@@ -1077,11 +1077,7 @@ function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPers
                 <span style={{background:"var(--gold)", color:"#fff", borderRadius:99, fontSize:9, fontWeight:800, padding:"1px 5px", marginLeft:2}}>{activeCount}</span>
               )}
             </button>
-            <ThemeToggle theme={theme} setTheme={setTheme}
-          position={position}
-          geoLoading={geoLoading}
-          geoError={geoError}
-          onGeoRequest={requestGeo} />
+            <ThemeToggle theme={theme} setTheme={setTheme} />
           </div>
         </div>
 
