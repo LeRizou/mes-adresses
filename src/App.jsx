@@ -81,7 +81,7 @@ import { useState, useMemo, useReducer, useEffect, useCallback, useRef } from "r
 //    4. Lancer `npm run dev` ou `npm run build`
 //
 //  ⚠️  SÉCURITÉ — limitation inhérente aux SPAs :
-//      Adresses injecte ces valeurs dans le bundle JS à la compilation.
+//      Vite injecte ces valeurs dans le bundle JS à la compilation.
 //      Elles seront lisibles dans le bundle de production par DevTools.
 //      Pour une protection maximale, utiliser un proxy serverless
 //      (Netlify Functions, Vercel Edge Functions) qui garde la clé côté serveur.
@@ -100,6 +100,125 @@ const API_URL = import.meta.env.VITE_API_URL;
  * Source : variable d'environnement VITE_API_KEY (fichier .env).
  */
 const API_KEY = import.meta.env.VITE_API_KEY;
+
+// ─────────────────────────────────────────────────────────────────
+//  SPRINT 1.3 — PREFETCH AU NIVEAU MODULE
+//  Lancé dès que le JS est chargé, AVANT que React se monte.
+//  Le cold start GAS (~1-2s) se passe pendant l'init React.
+// ─────────────────────────────────────────────────────────────────
+const _prefetchPromise = (API_URL && API_KEY)
+  ? fetch(API_URL, {
+      method:  "POST",
+      headers: { "Content-Type": "text/plain" },
+      body:    JSON.stringify({ action: "GET_ALL", "x-api-key": API_KEY, limit: 5000 }),
+      redirect:"follow",
+    }).catch(() => null)
+  : null;
+
+// ─────────────────────────────────────────────────────────────────
+//  SPRINT 1.1 — CACHE LOCALSTORAGE (stale-while-revalidate)
+//  1. Affiche les données cachées instantanément (~10ms)
+//  2. Rafraîchit en arrière-plan depuis le GAS
+//  3. Invalide le cache après chaque CREATE / UPDATE / DELETE
+// ─────────────────────────────────────────────────────────────────
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_KEY    = "mes-adresses-v3-data";
+const CACHE_TS_KEY = "mes-adresses-v3-ts";
+
+function getCachedData() {
+  try {
+    const ts = parseInt(localStorage.getItem(CACHE_TS_KEY) || "0", 10);
+    if (!ts || Date.now() - ts > CACHE_TTL_MS) return null;
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function setCachedData(data) {
+  try {
+    localStorage.setItem(CACHE_KEY,    JSON.stringify(data));
+    localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+  } catch { /* quota exceeded — silencieux */ }
+}
+/** Invalide le cache. Appeler après chaque CREATE / UPDATE / DELETE. */
+function clearAddressCache() {
+  try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(CACHE_TS_KEY); }
+  catch { /* silencieux */ }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  SPRINT 2 — GÉOLOCALISATION & DISTANCE
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Calcule la distance en km entre deux points GPS (formule Haversine).
+ * Côté client, instantané, sans appel API.
+ * @param {number} lat1  Latitude point 1
+ * @param {number} lng1  Longitude point 1
+ * @param {number} lat2  Latitude point 2
+ * @param {number} lng2  Longitude point 2
+ * @returns {number} Distance en km (arrondie à 2 décimales)
+ */
+function haversine(lat1, lng1, lat2, lng2) {
+  const R   = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a   = Math.sin(dLat/2)**2
+            + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180)
+            * Math.sin(dLng/2)**2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 100) / 100;
+}
+
+/**
+ * Formate une distance km pour l'affichage.
+ * < 1 km  → "850 m"
+ * >= 1 km → "1.2 km"
+ */
+function formatDistance(km) {
+  if (km === null || km === undefined) return null;
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+
+/**
+ * Hook : géolocalisation du navigateur.
+ * Retourne { position, error, loading, request }
+ *   position = { lat, lng } | null
+ *   request()  = demande/rafraîchit la position
+ * Mémorise la position en sessionStorage (pas de re-demande entre pages).
+ */
+function useGeolocation() {
+  const [position, setPosition] = useState(() => {
+    try {
+      const s = sessionStorage.getItem("mes-adresses-geo");
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  });
+  const [geoError,  setGeoError]  = useState(null);
+  const [geoLoading,setGeoLoading]= useState(false);
+
+  const request = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGeoError("Géolocalisation non supportée par ce navigateur");
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError(null);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setPosition(p);
+        setGeoLoading(false);
+        try { sessionStorage.setItem("mes-adresses-geo", JSON.stringify(p)); } catch {}
+      },
+      err => {
+        setGeoLoading(false);
+        setGeoError(err.code === 1 ? "Permission refusée" : "Position indisponible");
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+    );
+  }, []);
+
+  return { position, geoError, geoLoading, request };
+}
 
 
 // ─────────────────────────────────────────────────────────────────
@@ -414,6 +533,7 @@ function normalizePlace(raw, idx) {
     status,
     tags,
     commentaire:    raw.notes       ?? raw.commentaire ?? "",
+    timestamp:      raw.timestamp ?? raw.TIMESTAMP ?? null,
     coordonnees: {
       lat: parseFloat(raw.lat),
       lng: parseFloat(raw.lng),
@@ -423,96 +543,95 @@ function normalizePlace(raw, idx) {
 
 
 // ─────────────────────────────────────────────────────────────────
-//  HOOK : useData
-//  Fetch les données depuis l'API GAS avec :
-//    - Timeout de 8s
-//    - Clé API dans le body POST (jamais dans l'URL)
-//    - Déduplication par nom
-//    - Fallback sur MOCK_ADDRESSES en cas d'erreur
-//    - Mécanisme de refresh manuel
-//    - Annulation des requêtes en vol (cancelled flag)
-//    - Guard : bascule immédiatement en fallback si les env vars sont absentes
+//  HOOK : useData  (Sprint 1 — Performance)
+//
+//  Stratégie : prefetch + cache stale-while-revalidate + chargement progressif
+//
+//  Pas de cache → affiche 200 adresses dès la réponse GAS, le reste en fond
+//  Cache chaud  → affiche instantanément, rafraîchit silencieusement en fond
 // ─────────────────────────────────────────────────────────────────
-function useData() {
-  const [addresses,  setAddresses]  = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
-  const [source,     setSource]     = useState(null); // "api" | "fallback"
-  const [refreshKey, setRefreshKey] = useState(0);    // incrémenter pour re-fetch
 
-  /** Force un re-fetch des données. */
+const FIRST_BATCH = 200;
+
+function useData() {
+  const [addresses,  setAddresses]  = useState(() => {
+    const c = getCachedData();
+    return c ? c.map(normalizePlace) : [];
+  });
+  const [loading,    setLoading]    = useState(() => !getCachedData());
+  const [error,      setError]      = useState(null);
+  const [source,     setSource]     = useState(() => getCachedData() ? "cache" : null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const refresh = useCallback(() => {
+    clearAddressCache();
     setLoading(true);
     setError(null);
     setRefreshKey(k => k + 1);
   }, []);
 
   useEffect(() => {
-    let cancelled = false; // évite les setState sur un composant démonté
-
+    let cancelled = false;
     (async () => {
-      // Guard : si les variables d'environnement sont absentes (build sans .env),
-      // on bascule immédiatement en mode démo plutôt que d'envoyer une requête invalide.
       if (!API_URL || !API_KEY) {
-        console.warn("[useData] Variables d'environnement VITE_API_URL / VITE_API_KEY absentes — mode démo activé.");
-        setAddresses(MOCK_ADDRESSES);
-        setSource("fallback");
-        setError("Configuration manquante (.env)");
-        setLoading(false);
+        if (!getCachedData()) {
+          setAddresses(MOCK_ADDRESSES);
+          setSource("fallback");
+          setError("Configuration manquante (.env)");
+          setLoading(false);
+        }
         return;
       }
-
       try {
-        // La clé API est transmise dans le body POST (jamais dans l'URL).
-        // Raison : l'URL apparaît dans les logs GAS, les logs réseau, l'historique navigateur.
-        // L'action GET_ALL est indiquée dans le body comme pour tous les appels de lecture.
-        const res = await Promise.race([
-          fetch(API_URL, {
-            method:   "POST",
-            headers:  { "Content-Type": "text/plain" }, // évite le preflight CORS
-            body: JSON.stringify({ action: "GET_ALL", "x-api-key": API_KEY, limit: 5000 }),
-            redirect: "follow",
-          }),
-          new Promise((_, rej) =>
-            setTimeout(() => rej(new Error("Timeout (8s)")), 8000)
-          ),
-        ]);
+        const fetchPromise = refreshKey === 0 && _prefetchPromise
+          ? _prefetchPromise
+          : fetch(API_URL, {
+              method:  "POST",
+              headers: { "Content-Type": "text/plain" },
+              body:    JSON.stringify({ action:"GET_ALL","x-api-key":API_KEY, limit:5000 }),
+              redirect:"follow",
+            }).catch(() => null);
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res = await Promise.race([
+          fetchPromise,
+          new Promise((_, rej) => setTimeout(() => rej(new Error("Timeout (10s)")), 10000)),
+        ]);
+        if (!res || !res.ok) throw new Error(res ? `HTTP ${res.status}` : "Pas de réponse");
         const json = await res.json();
         if (cancelled) return;
 
-        // Support des deux formats de réponse GAS :
-        //   - Nouveau : { ok: true, data: [...] }
-        //   - Ancien  : tableau direct [...]
         const raw = Array.isArray(json) ? json
           : ((json?.ok || json?.success) && Array.isArray(json.data)) ? json.data
           : null;
         if (!raw) throw new Error("Format de réponse inattendu");
 
-        // Déduplication par nom (insensible à la casse)
         const seen = new Set();
         const deduped = raw.filter(r => {
           const key = (r.name ?? "").trim().toLowerCase();
           if (!key || seen.has(key)) return false;
-          seen.add(key);
-          return true;
+          seen.add(key); return true;
         });
 
-        setAddresses(deduped.map(normalizePlace));
-        setSource("api");
-
-      } catch (err) {
+        // Sprint 1.2 — chargement progressif : premier batch immédiat
+        const first = deduped.slice(0, FIRST_BATCH).map(normalizePlace);
+        if (!cancelled) { setAddresses(first); setSource("api"); setLoading(false); }
+        setCachedData(deduped);
+        if (deduped.length > FIRST_BATCH) {
+          setTimeout(() => { if (!cancelled) setAddresses(deduped.map(normalizePlace)); }, 0);
+        }
+      } catch (fetchErr) {
         if (cancelled) return;
-        console.warn("[useData] fallback vers mock :", err.message);
-        setAddresses(MOCK_ADDRESSES);
-        setSource("fallback");
-        setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (getCachedData()) {
+          console.warn("[useData] Refresh échoué, cache conservé :", fetchErr.message);
+          setSource("cache");
+        } else {
+          setAddresses(MOCK_ADDRESSES);
+          setSource("fallback");
+          setError(fetchErr.message);
+        }
+        setLoading(false);
       }
     })();
-
     return () => { cancelled = true; };
   }, [refreshKey]);
 
@@ -780,14 +899,16 @@ function getMapsUrl(address) {
 //  reducer : SET (valeur simple), TOGGLE (valeur dans tableau), RESET
 // ─────────────────────────────────────────────────────────────────
 const INIT = {
-  search:   "",   // texte libre (nom, tag)
-  cats:     [],   // catégories sélectionnées (multi)
-  budgets:  [],   // budgets sélectionnés (multi)
-  noteMin:  0,    // note minimum (slider 0–5)
-  event:    "",   // type d'événement (select unique)
-  person:   "",   // personne qui recommande (select unique)
-  statuses: [],   // statuts sélectionnés (multi)
-  tags:     [],   // tags sélectionnés (multi, ET logique)
+  search:     "",   // texte libre (nom, tag)
+  cats:       [],   // catégories sélectionnées (multi)
+  budgets:    [],   // budgets sélectionnés (multi)
+  noteMin:    0,    // note minimum (slider 0–5)
+  event:      "",   // type d'événement (select unique)
+  person:     "",   // personne qui recommande (select unique)
+  statuses:   [],   // statuts sélectionnés (multi)
+  tags:       [],   // tags sélectionnés (multi, ET logique)
+  radiusKm:   0,    // Sprint 2 — rayon en km (0 = désactivé)
+  cityFilter: "",   // Sprint 2 — filtre ville / arrondissement (texte)
 };
 
 function reducer(s, a) {
@@ -920,13 +1041,18 @@ function MapsButton({ address, compact = false }) {
 //  Contient : titre, compteur, pills catégories,
 //             panneau de filtres avancés (budget, note, statut, etc.)
 // ─────────────────────────────────────────────────────────────────
-function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPersons, allTags, theme, setTheme }) {
+function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPersons, allTags, theme, setTheme, position, geoLoading, geoError, onGeoRequest }) {
   const [open, setOpen] = useState(false);
 
   const activeCount = [
     f.cats.length, f.budgets.length,
-    f.noteMin > 0 ? 1 : 0, f.event ? 1 : 0, f.person ? 1 : 0,
-    f.statuses.length, f.tags.length,
+    f.noteMin > 0   ? 1 : 0,
+    f.event         ? 1 : 0,
+    f.person        ? 1 : 0,
+    f.statuses.length,
+    f.tags.length,
+    f.radiusKm > 0  ? 1 : 0,  // Sprint 2
+    f.cityFilter    ? 1 : 0,  // Sprint 2
   ].reduce((a, b) => a + b, 0);
 
   return (
@@ -1020,6 +1146,63 @@ function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPers
               </div>
             </div>
           )}
+          {/* Sprint 2 — Géolocalisation + filtre par rayon */}
+          <div style={{marginTop:14, display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-start"}}>
+            {/* Bouton de géolocalisation */}
+            <div style={{flex:"1 1 180px"}}>
+              <Label>Position actuelle</Label>
+              <button
+                onClick={onGeoRequest}
+                disabled={geoLoading}
+                style={{
+                  display:"flex", alignItems:"center", gap:6,
+                  padding:"8px 14px", borderRadius:9, fontSize:12, fontWeight:600,
+                  border:"1.5px solid var(--border)", cursor:"pointer",
+                  background: position ? "var(--navy)" : "var(--surface)",
+                  color:      position ? "var(--bg)"   : "var(--ink2)",
+                  width:"100%", justifyContent:"center",
+                }}
+              >
+                {geoLoading ? "..." : position ? "📍 Position active" : "📍 Me localiser"}
+              </button>
+              {geoError && <span style={{fontSize:10, color:"var(--sn-fg)", marginTop:3, display:"block"}}>{geoError}</span>}
+              {position && (
+                <button onClick={() => dispatch({t:"SET",k:"radiusKm",v:0})} style={{marginTop:4, fontSize:10, color:"var(--faint)", background:"none", border:"none", cursor:"pointer", padding:0}}>
+                  Effacer la position
+                </button>
+              )}
+            </div>
+
+            {/* Filtre par rayon — affiché seulement si position disponible */}
+            {position && (
+              <div style={{flex:"1 1 180px"}}>
+                <Label>Rayon {f.radiusKm > 0 ? `— ≤ ${f.radiusKm} km` : "— désactivé"}</Label>
+                <div style={{display:"flex", gap:5, flexWrap:"wrap", marginTop:4}}>
+                  {[0, 0.5, 1, 2, 5, 10].map(r => (
+                    <button key={r} onClick={() => dispatch({t:"SET",k:"radiusKm",v:r})} style={{
+                      padding:"5px 10px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer",
+                      border:"1.5px solid",
+                      background:  f.radiusKm === r ? "var(--navy)"  : "transparent",
+                      color:       f.radiusKm === r ? "var(--bg)"    : "var(--muted)",
+                      borderColor: f.radiusKm === r ? "var(--navy)"  : "var(--border)",
+                    }}>{r === 0 ? "Tous" : `${r} km`}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sprint 2 — Filtre par ville / arrondissement */}
+          <div style={{marginTop:14}}>
+            <Label>Ville ou arrondissement</Label>
+            <input
+              placeholder="ex: 75011, Montmartre, Lyon…"
+              value={f.cityFilter}
+              onChange={e => dispatch({t:"SET",k:"cityFilter",v:e.target.value})}
+              style={{...inputStyle, paddingLeft:10}}
+            />
+          </div>
+
           {activeCount > 0 && (
             <button onClick={() => dispatch({t:"RESET"})} style={{marginTop:14, padding:"8px 18px", borderRadius:99, fontSize:11, fontWeight:700, background:"var(--pill-idle)", color:"var(--ink2)", border:"none", cursor:"pointer"}}>
               ↺ Réinitialiser tous les filtres
@@ -1036,12 +1219,14 @@ function FilterBar({ f, dispatch, count, allCats, allBudgets, allEvents, allPers
 /** Chips des filtres actifs (sauf catégories). Chaque chip retire le filtre au clic. */
 function ActiveChips({ f, dispatch }) {
   const chips = [
-    ...f.budgets.map(b  => ({ l:b,              fn:() => dispatch({t:"TOGGLE",k:"budgets", v:b  }) })),
-    ...(f.noteMin > 0    ? [{ l:`≥${f.noteMin}★`, fn:() => dispatch({t:"SET",   k:"noteMin", v:0  }) }] : []),
-    ...(f.event          ? [{ l:f.event,          fn:() => dispatch({t:"SET",   k:"event",   v:"" }) }] : []),
-    ...(f.person         ? [{ l:f.person,         fn:() => dispatch({t:"SET",   k:"person",  v:"" }) }] : []),
-    ...f.statuses.map(s => ({ l:s,               fn:() => dispatch({t:"TOGGLE",k:"statuses",v:s  }) })),
-    ...f.tags.map(t     => ({ l:t,               fn:() => dispatch({t:"TOGGLE",k:"tags",    v:t  }) })),
+    ...f.budgets.map(b  => ({ l:b,              fn:() => dispatch({t:"TOGGLE",k:"budgets",  v:b   }) })),
+    ...(f.noteMin > 0    ? [{ l:`≥${f.noteMin}★`, fn:() => dispatch({t:"SET",   k:"noteMin",  v:0   }) }] : []),
+    ...(f.event          ? [{ l:f.event,          fn:() => dispatch({t:"SET",   k:"event",    v:""  }) }] : []),
+    ...(f.person         ? [{ l:f.person,         fn:() => dispatch({t:"SET",   k:"person",   v:""  }) }] : []),
+    ...f.statuses.map(s => ({ l:s,               fn:() => dispatch({t:"TOGGLE",k:"statuses",  v:s   }) })),
+    ...f.tags.map(t     => ({ l:t,               fn:() => dispatch({t:"TOGGLE",k:"tags",      v:t   }) })),
+    ...(f.radiusKm > 0   ? [{ l:`≤${f.radiusKm} km`, fn:() => dispatch({t:"SET",k:"radiusKm",v:0 }) }] : []),
+    ...(f.cityFilter     ? [{ l:f.cityFilter,    fn:() => dispatch({t:"SET",   k:"cityFilter",v:""  }) }] : []),
     ...(f.search         ? [{ l:`"${f.search}"`, fn:() => dispatch({t:"SET",   k:"search",  v:"" }) }] : []),
   ];
   if (!chips.length) return null;
@@ -1066,10 +1251,15 @@ function ActiveChips({ f, dispatch }) {
 //  Affiche : nom, adresse, note, catégories, tags, commentaire tronqué,
 //            recommandations, bouton Maps, lien "Voir la fiche".
 // ─────────────────────────────────────────────────────────────────
-function AddressCard({ a, onOpen, idx, comment }) {
+function AddressCard({ a, onOpen, idx, comment, userPosition }) {
   const col = cc(a.categorie);
   const [hov, setHov] = useState(false);
   const hasComment = comment && comment.trim().length > 0;
+
+  // Sprint 2 — distance par rapport à la position de l'utilisateur
+  const distance = userPosition && !isNaN(a.coordonnees?.lat) && !isNaN(a.coordonnees?.lng)
+    ? haversine(userPosition.lat, userPosition.lng, a.coordonnees.lat, a.coordonnees.lng)
+    : null;
 
   return (
     <article
@@ -1088,6 +1278,12 @@ function AddressCard({ a, onOpen, idx, comment }) {
           </div>
           <div style={{display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0}}>
             {a.budget && <span style={{fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:99, background:`${col}15`, color:col, border:`1px solid ${col}25`}}>{a.budget}</span>}
+            {/* Sprint 2 — badge distance si position disponible */}
+            {distance !== null && (
+              <span style={{fontSize:10, fontWeight:600, padding:"2px 7px", borderRadius:99, background:"var(--surface2)", color:"var(--muted)", border:"1px solid var(--border)"}}>
+                {formatDistance(distance)}
+              </span>
+            )}
             <StatusBadge status={a.status} small />
           </div>
         </div>
@@ -1730,7 +1926,6 @@ export default function App() {
   const { addresses: remoteAddresses, loading, error, source } = useData();
   const { theme, setTheme } = useTheme();
   const { toast, show: showToast } = useToast();
-  const { position, geoError, geoLoading, request: requestGeo } = useGeolocation();
 
   const [f, dispatch] = useReducer(reducer, INIT);
   const [sort, setSort] = useState("note");
@@ -1808,17 +2003,20 @@ export default function App() {
       };
     }));
     // ⚠️  Pas de setModal(null) ici — correction Bug 3
+    clearAddressCache(); // Sprint 1.1 — invalide le cache après modification
   }, []);
 
-  /** Ajoute un nouveau lieu en tête de liste. */
+  /** Ajoute un nouveau lieu en tête de liste et invalide le cache. */
   const handleCreate = useCallback((newAddr) => {
     setAddresses(prev => [newAddr, ...prev]);
+    clearAddressCache(); // Sprint 1.1
   }, []);
 
-  /** Supprime une adresse par id et ferme la modal si elle était ouverte. */
+  /** Supprime une adresse par id, ferme la modal et invalide le cache. */
   const handleDelete = useCallback((id) => {
     setAddresses(prev => prev.filter(a => a.id !== id));
     setModal(null);
+    clearAddressCache(); // Sprint 1.1
   }, []);
 
   /**
@@ -1863,17 +2061,6 @@ export default function App() {
       d = d.filter(a => f.statuses.includes(a.status));
     if (!skip.includes("tags") && f.tags.length)
       d = d.filter(a => f.tags.every(t => a.tags.includes(t))); // ET logique
-   
-    // Sprint 2 — filtre par ville / arrondissement
-    if (!skip.includes("cityFilter") && f.cityFilter)
-      d = d.filter(a => a.adresse?.toLowerCase().includes(f.cityFilter.toLowerCase()));
-    // Sprint 2 — filtre par rayon (nécessite position)
-    if (!skip.includes("radiusKm") && f.radiusKm > 0 && position)
-      d = d.filter(a => {
-      if (isNaN(a.coordonnees?.lat) || isNaN(a.coordonnees?.lng)) return false;
-      return haversine(position.lat, position.lng, a.coordonnees.lat, a.coordonnees.lng) <= f.radiusKm;
-      });
-    
     return d;
   }, [f]);
 
@@ -1894,13 +2081,13 @@ export default function App() {
       const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
       const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
       return tb - ta;
-      });
+    });
     if (sort === "distance" && position) return [...d].sort((a, b) => {
       const da = haversine(position.lat, position.lng, a.coordonnees.lat, a.coordonnees.lng);
       const db = haversine(position.lat, position.lng, b.coordonnees.lat, b.coordonnees.lng);
       return da - db;
-      });
-  return d;
+    });
+    return d;
   }, [addresses, applyF, sort]);
 
 
@@ -1942,10 +2129,6 @@ export default function App() {
           allCats={allCats} allBudgets={allBudgets}
           allEvents={allEvents} allPersons={allPersons} allTags={allTags}
           theme={theme} setTheme={setTheme}
-          position={position}
-          geoLoading={geoLoading}
-          geoError={geoError}
-          onGeoRequest={requestGeo}
         />
 
         <div style={{maxWidth:900, margin:"0 auto", padding:"20px 14px 40px"}}>
@@ -1974,7 +2157,7 @@ export default function App() {
           ) : (
             <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12}}>
               {results.map((a, i) => (
-                <AddressCard key={a.id} a={a} onOpen={setModal} idx={i} comment={comments[a.id]??""} userPosition={position}
+                <AddressCard key={a.id} a={a} onOpen={setModal} idx={i} comment={comments[a.id]??""} userPosition={position} />
               ))}
             </div>
           )}
