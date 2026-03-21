@@ -1730,6 +1730,7 @@ export default function App() {
   const { addresses: remoteAddresses, loading, error, source } = useData();
   const { theme, setTheme } = useTheme();
   const { toast, show: showToast } = useToast();
+  const { position, geoError, geoLoading, request: requestGeo } = useGeolocation();
 
   const [f, dispatch] = useReducer(reducer, INIT);
   const [sort, setSort] = useState("note");
@@ -1862,6 +1863,17 @@ export default function App() {
       d = d.filter(a => f.statuses.includes(a.status));
     if (!skip.includes("tags") && f.tags.length)
       d = d.filter(a => f.tags.every(t => a.tags.includes(t))); // ET logique
+   
+    // Sprint 2 — filtre par ville / arrondissement
+    if (!skip.includes("cityFilter") && f.cityFilter)
+      d = d.filter(a => a.adresse?.toLowerCase().includes(f.cityFilter.toLowerCase()));
+    // Sprint 2 — filtre par rayon (nécessite position)
+    if (!skip.includes("radiusKm") && f.radiusKm > 0 && position)
+      d = d.filter(a => {
+      if (isNaN(a.coordonnees?.lat) || isNaN(a.coordonnees?.lng)) return false;
+      return haversine(position.lat, position.lng, a.coordonnees.lat, a.coordonnees.lng) <= f.radiusKm;
+      });
+    
     return d;
   }, [f]);
 
@@ -1878,7 +1890,17 @@ export default function App() {
     if (sort === "note")   return [...d].sort((a, b) => b.note - a.note);
     if (sort === "nom")    return [...d].sort((a, b) => a.nom.localeCompare(b.nom));
     if (sort === "budget") return [...d].sort((a, b) => BUDGET_ORDER.indexOf(a.budget) - BUDGET_ORDER.indexOf(b.budget));
-    return d;
+    if (sort === "recent") return [...d].sort((a, b) => {
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return tb - ta;
+      });
+    if (sort === "distance" && position) return [...d].sort((a, b) => {
+      const da = haversine(position.lat, position.lng, a.coordonnees.lat, a.coordonnees.lng);
+      const db = haversine(position.lat, position.lng, b.coordonnees.lat, b.coordonnees.lng);
+      return da - db;
+      });
+  return d;
   }, [addresses, applyF, sort]);
 
 
@@ -1920,6 +1942,10 @@ export default function App() {
           allCats={allCats} allBudgets={allBudgets}
           allEvents={allEvents} allPersons={allPersons} allTags={allTags}
           theme={theme} setTheme={setTheme}
+          position={position}
+          geoLoading={geoLoading}
+          geoError={geoError}
+          onGeoRequest={requestGeo}
         />
 
         <div style={{maxWidth:900, margin:"0 auto", padding:"20px 14px 40px"}}>
@@ -1931,7 +1957,7 @@ export default function App() {
               {source === "api" && <span style={{color:"#3D9E6A", marginLeft:6, fontSize:10, fontWeight:600}}>● live</span>}
             </p>
             <div style={{display:"flex", gap:5}}>
-              {[{v:"note",l:"⭐ Note"},{v:"nom",l:"A–Z"},{v:"budget",l:"€ Budget"}].map(o => (
+              {[{v:"note",l:"⭐ Note"},{v:"nom",l:"A–Z"},{v:"budget",l:"€ Budget"},{v:"recent",l:"🕐 Récent"},{v:"distance",l:"📍 Distance"}].map(o => (
                 <button key={o.v} onClick={() => setSort(o.v)} style={{padding:"5px 11px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer", border:"none", background:sort===o.v?"var(--navy)":"var(--sort-idle)", color:sort===o.v?"var(--bg)":"var(--sort-text)", transition:"all .14s"}}>{o.l}</button>
               ))}
             </div>
@@ -1948,7 +1974,7 @@ export default function App() {
           ) : (
             <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12}}>
               {results.map((a, i) => (
-                <AddressCard key={a.id} a={a} onOpen={setModal} idx={i} comment={comments[a.id]??""} />
+                <AddressCard key={a.id} a={a} onOpen={setModal} idx={i} comment={comments[a.id]??""} userPosition={position}
               ))}
             </div>
           )}
